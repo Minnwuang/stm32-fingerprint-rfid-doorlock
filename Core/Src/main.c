@@ -130,7 +130,7 @@ osThreadId_t accessTaskHandle;
 osThreadId_t lcdTaskHandle;
 osThreadId_t autoTaskHandle;
 osThreadId_t fingerTaskHandle;    /* AS608 fingerprint task */
-
+osThreadId_t doorSensorTaskHandle;  /* task doi semaphore cua cam bien cua */
 osMessageQueueId_t appEventQueueHandle;
 osMessageQueueId_t lcdQueueHandle;
 
@@ -138,6 +138,8 @@ osTimerId_t secondTimerHandle;
 osTimerId_t uiTempTimerHandle;
 osTimerId_t alarmTimerHandle;
 
+osSemaphoreId_t doorClosedSemHandle;
+osSemaphoreId_t fpRxSemHandle;       /* binary semaphore cho UART RX vân tay *//* binary semaphore */
 /*
  * lcdMutexHandle : bảo vệ bus I2C của LCD khỏi bị nhiều task ghi đồng thời.
  * fpMutexHandle  : bảo vệ fpacket/rpacket của fingerprint.
@@ -238,6 +240,7 @@ void StartAccessControlTask(void *argument);
 void StartLCDTask(void *argument);
 void StartAutoTask(void *argument);
 void StartFingerTask(void *argument);
+void StartDoorSensorTask(void *argument);
 void SecondTimerCallback(void *argument);
 void UiTempTimerCallback(void *argument);
 void AlarmTimerCallback(void *argument);
@@ -369,10 +372,16 @@ bool DoorSensor_IsClosed(void)
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
     if (GPIO_Pin == DOOR_SW_Pin)
+    {
         if (DoorSensor_IsClosed())
-            PostSimpleEvent(EVT_DOOR_CLOSED);
+        {
+            if (doorClosedSemHandle != NULL)
+            {
+                osSemaphoreRelease(doorClosedSemHandle);
+            }
+        }
+    }
 }
-
 /* ====================== BASIC HELPERS ====================== */
 void CopyLine(char *dst, const char *src)
 {
@@ -1685,7 +1694,21 @@ void StartLCDTask(void *argument)
         }
     }
 }
+void StartDoorSensorTask(void *argument)
+{
+    (void)argument;
 
+    for (;;)
+    {
+        if (osSemaphoreAcquire(doorClosedSemHandle, osWaitForever) == osOK)
+        {
+            if (DoorSensor_IsClosed())
+            {
+                PostSimpleEvent(EVT_DOOR_CLOSED);
+            }
+        }
+    }
+}
 void StartAccessControlTask(void *argument)
 {
     AppEvent evt;
@@ -2108,11 +2131,13 @@ int main(void)
     secondTimerHandle   = osTimerNew(SecondTimerCallback, osTimerPeriodic, NULL, NULL);
     uiTempTimerHandle   = osTimerNew(UiTempTimerCallback, osTimerOnce,     NULL, NULL);
     alarmTimerHandle    = osTimerNew(AlarmTimerCallback,  osTimerOnce,     NULL, NULL);
-
+    doorClosedSemHandle = osSemaphoreNew(1U, 0U, NULL);
+    fpRxSemHandle       = osSemaphoreNew(1U, 0U, NULL);
     if (lcdMutexHandle == NULL || fpMutexHandle == NULL ||
         appEventQueueHandle == NULL || lcdQueueHandle == NULL ||
         secondTimerHandle == NULL || uiTempTimerHandle == NULL ||
-        alarmTimerHandle == NULL)
+        alarmTimerHandle == NULL|| doorClosedSemHandle == NULL ||
+		fpRxSemHandle == NULL)
     {
         LCD_WritePaddedLine(0U, "RTOS obj fail");
         LCD_WritePaddedLine(1U, "Heap/Mutex err");
@@ -2130,17 +2155,22 @@ int main(void)
            Tang len 1024U neu gap stack overflow. */
         .name = "FingerTask", .priority = osPriorityBelowNormal, .stack_size = 2048U
     };
-
+    const osThreadAttr_t doorSensorTask_attr = {
+        .name = "DoorSemTask",
+        .priority = osPriorityBelowNormal,
+        .stack_size = 256U
+    };
     keypadTaskHandle = osThreadNew(StartKeypadTask,        NULL, &keypadTask_attr);
     rfidTaskHandle   = osThreadNew(StartRFIDTask,          NULL, &rfidTask_attr);
     accessTaskHandle = osThreadNew(StartAccessControlTask, NULL, &accessTask_attr);
     lcdTaskHandle    = osThreadNew(StartLCDTask,           NULL, &lcdTask_attr);
     autoTaskHandle   = osThreadNew(StartAutoTask,          NULL, &autoTask_attr);
     fingerTaskHandle = osThreadNew(StartFingerTask,        NULL, &fingerTask_attr);
-
+    doorSensorTaskHandle = osThreadNew(StartDoorSensorTask,    NULL, &doorSensorTask_attr);
     if (keypadTaskHandle == NULL || rfidTaskHandle   == NULL ||
         accessTaskHandle == NULL || lcdTaskHandle    == NULL ||
-        autoTaskHandle   == NULL || fingerTaskHandle == NULL)
+        autoTaskHandle   == NULL || fingerTaskHandle == NULL ||
+		doorSensorTaskHandle == NULL)
     {
         LCD_WritePaddedLine(0U, "Task fail");
         LCD_WritePaddedLine(1U, "Check heap");
