@@ -6,8 +6,11 @@
   #include "FreeRTOS.h"
   #include "task.h"
   extern osMutexId_t fpMutexHandle;
+  extern osSemaphoreId_t fpRxSemHandle;
 #endif
-
+#ifdef USE_FREERTOS
+static void fp_rx_sem_drain(void);
+#endif
 /*
  * ================================================================
  *  NGUYÊN NHÂN GỐC CỦA LỖI 0x01 VÀ "ĐƠ" AUTO MODE
@@ -90,16 +93,25 @@ void fp_uart_irq_handler(void)
     {
         uint8_t byte = (uint8_t)(UART_HANDLER.Instance->DR & 0xFFU);
         uint16_t next = (uint16_t)((fp_ring_head + 1U) % FP_RING_SIZE);
-        if (next != fp_ring_tail)   /* Còn chỗ trong buffer */
+
+        if (next != fp_ring_tail)
         {
+#ifdef USE_FREERTOS
+            uint8_t was_empty = (fp_ring_head == fp_ring_tail) ? 1U : 0U;
+#endif
             fp_ring_buf[fp_ring_head] = byte;
             fp_ring_head = next;
+
+#ifdef USE_FREERTOS
+            if (was_empty && fpRxSemHandle != NULL)
+            {
+                osSemaphoreRelease(fpRxSemHandle);
+            }
+#endif
         }
-        /* Nếu buffer đầy: byte bị bỏ, nhưng DR đã được đọc → clear RXNE */
     }
     else if (sr & (USART_SR_ORE | USART_SR_FE | USART_SR_NE))
     {
-        /* Clear lỗi: đọc SR (đã đọc trên) rồi đọc DR */
         volatile uint32_t dummy = UART_HANDLER.Instance->DR;
         (void)dummy;
     }
@@ -109,6 +121,9 @@ void fp_uart_irq_handler(void)
 static void fp_ring_flush(void)
 {
     fp_ring_tail = fp_ring_head;
+#ifdef USE_FREERTOS
+    fp_rx_sem_drain();
+#endif
 }
 
 /*
@@ -121,20 +136,50 @@ static uint8_t fp_ring_read_byte(uint8_t *byte, uint32_t timeout_ms)
 {
     uint32_t t0 = HAL_GetTick();
 
-    while (fp_ring_head == fp_ring_tail)
+    if (byte == NULL)
+        return 1U;
+
+    while (1)
     {
+        if (fp_ring_head != fp_ring_tail)
+        {
+            *byte = fp_ring_buf[fp_ring_tail];
+            fp_ring_tail = (uint16_t)((fp_ring_tail + 1U) % FP_RING_SIZE);
+            return 0U;
+        }
+
         if ((HAL_GetTick() - t0) >= timeout_ms)
             return 1U;
+
 #ifdef USE_FREERTOS
-        osDelay(1U);
+        if (fpRxSemHandle != NULL)
+        {
+            uint32_t elapsed = HAL_GetTick() - t0;
+            uint32_t remain  = (elapsed < timeout_ms) ? (timeout_ms - elapsed) : 0U;
+
+            if (remain == 0U)
+                return 1U;
+
+            (void)osSemaphoreAcquire(fpRxSemHandle, remain);
+        }
+        else
+        {
+            osDelay(1U);
+        }
+#else
+        HAL_Delay(1U);
 #endif
     }
-
-    *byte = fp_ring_buf[fp_ring_tail];
-    fp_ring_tail = (uint16_t)((fp_ring_tail + 1U) % FP_RING_SIZE);
-    return 0U;
 }
-
+#ifdef USE_FREERTOS
+static void fp_rx_sem_drain(void)
+{
+    if (fpRxSemHandle != NULL)
+    {
+        while (osSemaphoreAcquire(fpRxSemHandle, 0U) == osOK) {}
+    }
+}
+#endif
 /* ====================== GLOBALS ====================== */
 F_Packet fpacket = {
     .start_code = FINGERPRINT_STARTCODE,
