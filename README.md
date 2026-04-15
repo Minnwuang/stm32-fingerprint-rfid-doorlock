@@ -121,7 +121,7 @@ STM32F103C8TX_FLASH.ld
 .project
 .cproject
 .mxproject
-How to Open the Project
+## How to Open the Project
 Open STM32CubeIDE
 Select File > Open Projects from File System
 Choose this project folder
