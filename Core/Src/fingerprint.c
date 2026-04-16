@@ -38,10 +38,6 @@ void fp_uart_start_it(void)
 
 /*
  * fp_uart_irq_handler:
- *   Đặt lời gọi hàm này vào USART3_IRQHandler trong stm32f1xx_it.c:
- *
- *     void USART3_IRQHandler(void) { fp_uart_irq_handler(); }
- *
  *   Xử lý RXNE: đọc byte từ DR và lưu vào ring buffer.
  *   Xử lý lỗi: clear ORE/FE/NE bằng cách đọc SR → DR.
  *   Không có HAL lock → không bao giờ bị chặn.
