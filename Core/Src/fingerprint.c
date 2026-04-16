@@ -11,34 +11,6 @@
 #ifdef USE_FREERTOS
 static void fp_rx_sem_drain(void);
 #endif
-/*
- * ================================================================
- *  NGUYÊN NHÂN GỐC CỦA LỖI 0x01 VÀ "ĐƠ" AUTO MODE
- * ================================================================
- *
- * Cách cũ dùng HAL_UART_Receive_IT (one-shot):
- *
- *   HAL_UART_Transmit() (polling) giữ huart->Lock = HAL_LOCKED.
- *   Khi byte RX tới, ISR gọi HAL_UART_RxCpltCallback.
- *   Bên trong callback, HAL_UART_Receive_IT() cố gắng acquire
- *   __HAL_LOCK(huart) → thấy LOCKED → return HAL_BUSY.
- *   Kết quả: IT KHÔNG được re-arm → ring buffer ngừng nhận.
- *   Mọi fp_receive_packet_timeout() sau đó timeout → 0x01.
- *
- *   Enroll bị nặng hơn verify/delete vì có nhiều lệnh liên tiếp
- *   không có khoảng nghỉ → xác suất overlap TX/RX cao hơn.
- *   Auto mode "đơ" vì FingerTask timeout 1500ms liên tục.
- *
- * Giải pháp đúng:
- *
- *   1. KHÔNG dùng HAL_UART_Receive_IT (one-shot, bị lock chặn).
- *   2. Bật RXNE interrupt trực tiếp 1 lần duy nhất → luôn active.
- *   3. Trong USART3_IRQHandler (stm32f1xx_it.c), gọi fp_uart_irq_handler().
- *   4. fp_uart_irq_handler() đọc DR trực tiếp, lưu vào ring buffer.
- *      Không có lock, không thể bị chặn.
- *   5. TX cũng viết DR trực tiếp → hoàn toàn bypass HAL lock.
- * ================================================================
- */
 
 /* ====================== RING BUFFER ====================== */
 #define FP_RING_SIZE  128U
