@@ -20,11 +20,7 @@ extern "C" {
 extern UART_HandleTypeDef huart3;
 #define UART_HANDLER huart3
 
-/*
- * DEFAULTTIMEOUT : timeout cho hầu hết lệnh (ms).
- * MODELTIMEOUT   : timeout riêng cho fp_create_model().
- *                  Module AS608 cần tới 2s để tạo template từ 2 ảnh.
- */
+
 #define DEFAULTTIMEOUT   1500U
 #define MODELTIMEOUT     3000U
 
