@@ -18,16 +18,6 @@ static void fp_rx_sem_drain(void);
 static uint8_t           fp_ring_buf[FP_RING_SIZE];
 static volatile uint16_t fp_ring_head = 0U;  /* ISR ghi */
 static volatile uint16_t fp_ring_tail = 0U;  /* Task đọc */
-
-/*
- * fp_uart_start_it:
- *   Bật RXNE và ERR interrupt trực tiếp qua register.
- *   KHÔNG gọi HAL_UART_Receive_IT — tránh hoàn toàn vấn đề lock.
- *   Interrupt RXNE luôn active, tự động nhận mọi byte từ module.
- *
- *   Gọi 1 lần duy nhất, trước init_fingerprint().
- *   Đảm bảo USART3_IRQHandler và NVIC đã được enable trước khi gọi hàm này.
- */
 void fp_uart_start_it(void)
 {
     fp_ring_head = 0U;
@@ -240,17 +230,6 @@ void setup_received(const uint8_t *data)
     }
 }
 
-/* ====================== SEND ====================== */
-/*
- * fp_send_packet: Ghi trực tiếp vào USART DR register.
- *
- * KHÔNG dùng HAL_UART_Transmit vì hàm đó acquire __HAL_LOCK(huart).
- * Nếu lock bị giữ trong khi ISR cố gọi HAL_UART_Receive_IT
- * → IT không được re-arm → 0x01.
- * (Cách cũ đã gây ra bug này.)
- *
- * Viết trực tiếp vào DR: poll TXE flag rồi ghi. Đơn giản, không lock.
- */
 void fp_send_packet(void)
 {
     uint16_t packet_length = (uint16_t)(fpacket.length + 2U);
