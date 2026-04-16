@@ -75,11 +75,6 @@ extern F_Packet rpacket;
 extern uint16_t capacity;
 extern uint16_t baud_rate;
 
-/*
- * fp_uart_start_it  : Gọi 1 lần sau MX_USART3_UART_Init() để bật RXNE interrupt.
- * fp_uart_irq_handler: Gọi từ USART3_IRQHandler trong stm32f1xx_it.c.
- *                      KHÔNG dùng HAL_UART_RxCpltCallback nữa.
- */
 void    fp_uart_start_it(void);
 void    fp_uart_irq_handler(void);
 
